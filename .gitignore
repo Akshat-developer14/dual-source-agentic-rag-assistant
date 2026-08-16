@@ -11,6 +11,3 @@ wheels/
 
 # Environment variables/ Keys
 .env
-
-# Vector Store Cache (Optional, can also commit if tiny)
-vectorstore/
