@@ -37,10 +37,10 @@ def run_ingestion():
     print(f"Successfully loaded {len(pages)} pages from the pdf.")
 
     # Splitting pages into semantic chunks
-    print("Splitting text into chunks (Chunk_size=700, overlap=100)...")
+    print("Splitting text into chunks (Chunk_size=1200, overlap=200)...")
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=700,
-        chunk_overlap=100,
+        chunk_size=1200,
+        chunk_overlap=200,
         separators=["\n\n", "\n", ". ", " ", ""]
     )
     chunks = text_splitter.split_documents(pages)
