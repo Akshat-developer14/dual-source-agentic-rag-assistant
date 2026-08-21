@@ -1,3 +1,9 @@
+"""Offline ingestion pipeline for the AWS Well-Architected Framework knowledge base.
+
+Extracts text from the source PDF, partitions into overlapping semantic chunks,
+computes dense vector embeddings, and serializes a local FAISS vector index.
+"""
+
 import os
 from pypdf import PdfReader
 from langchain_core.documents import Document
@@ -9,8 +15,13 @@ PDF_PATH = os.path.join("data", "aws_well_architected.pdf")
 VECTORSTORE_DIRECTORY = os.path.join("vectorstore", "faiss_index")
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
+# Chunking configuration: preserves technical context across multi-page sections
+CHUNK_SIZE = 3000
+CHUNK_OVERLAP = 300
+
+
 def load_pdf_documents(file_path: str) -> list[Document]:
-    """Extracts pages using pypdf and returns standard langchain_core Documents."""
+    """Extracts non-empty pages from a target PDF into LangChain Document objects."""
     reader = PdfReader(file_path)
     documents = []
 
@@ -25,41 +36,38 @@ def load_pdf_documents(file_path: str) -> list[Document]:
             )
     return documents
 
-def run_ingestion():
-    # Check for path
-    if not os.path.exists(PDF_PATH):
-        raise FileNotFoundError(
-            f"Target PDF not found at '{PDF_PATH}'."
-        )
-    # Loading pdf
-    print(f"Extracting PDF document from: {PDF_PATH}...")
-    pages = load_pdf_documents(PDF_PATH)
-    print(f"Successfully loaded {len(pages)} pages from the pdf.")
 
-    # Splitting pages into semantic chunks
-    print("Splitting text into chunks (Chunk_size=3000, overlap=300)...")
+def run_ingestion() -> None:
+    """Executes the end-to-end PDF ingestion and FAISS vector index construction."""
+    if not os.path.exists(PDF_PATH):
+        raise FileNotFoundError(f"Target PDF document not found at '{PDF_PATH}'.")
+
+    print(f"[Ingest] Loading PDF document from: {PDF_PATH}...")
+    pages = load_pdf_documents(PDF_PATH)
+    print(f"[Ingest] Successfully extracted {len(pages)} pages.")
+
+    print(f"[Ingest] Splitting pages into semantic chunks (size={CHUNK_SIZE}, overlap={CHUNK_OVERLAP})...")
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=3000,
-        chunk_overlap=300,
-        separators=["\n\n", "\n", ". ", " ", ""]
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        separators=["\n\n", "\n", ". ", " ", ""],
     )
     chunks = text_splitter.split_documents(pages)
-    print(f"Generated {len(chunks)} total text chunks.")
+    print(f"[Ingest] Generated {len(chunks)} total text chunks.")
 
-    # Load local hugging face model
-    print(f"Loading local embedding model: {EMBEDDING_MODEL}...")
+    print(f"[Ingest] Initializing local embedding model: {EMBEDDING_MODEL}...")
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL,
         model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True}
+        encode_kwargs={"normalize_embeddings": True},
     )
 
-    # Build and persist FAISS index
-    print("Generating vector embeddings and building FAISS index...")
+    print("[Ingest] Generating vector embeddings and constructing FAISS index...")
     vectorstore = FAISS.from_documents(chunks, embeddings)
     os.makedirs(os.path.dirname(VECTORSTORE_DIRECTORY), exist_ok=True)
     vectorstore.save_local(VECTORSTORE_DIRECTORY)
-    print(f"Success! FAISS index created and saved to '{VECTORSTORE_DIRECTORY}'.")
+    print(f"[Ingest] Ingestion complete. FAISS index saved to '{VECTORSTORE_DIRECTORY}'.")
+
 
 if __name__ == "__main__":
-    run_ingestion()
+    run_ingestion()
