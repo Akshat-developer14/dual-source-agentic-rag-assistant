@@ -8,6 +8,7 @@ query reformulation, external web search, and grounded synthesis.
 import hashlib
 import json
 import logging
+import re
 import warnings
 from typing import Any
 from dotenv import load_dotenv
@@ -32,10 +33,9 @@ load_dotenv()
 
 # ---------------------------------------------------------------------------
 # LLM Initialization & Rate-Limit Resilience
-# Workloads are distributed across three distinct model pools on Groq:
-#   - Pool A: openai/gpt-oss-20b   (Ultra-fast, cost-effective; JSON & text)
-#   - Pool B: openai/gpt-oss-120b  (High-capacity reasoning; JSON synthesis)
-#   - Pool C: qwen/qwen3.6-27b     (Balanced multimodal; JSON & text fallback)
+# Workloads are distributed across high-performance, instruction-aligned Groq models:
+#   - openai/gpt-oss-20b   (Fast, precise; contextualization, routing, rewrites)
+#   - openai/gpt-oss-120b  (Deep reasoning; grading, synthesis, fallback)
 # ---------------------------------------------------------------------------
 
 # Router LLM: Intent classification with structured JSON output
@@ -46,7 +46,7 @@ _router_primary = ChatGroq(
     model_kwargs={"response_format": {"type": "json_object"}},
 )
 _router_fallback = ChatGroq(
-    model="qwen/qwen3.6-27b",
+    model="openai/gpt-oss-120b",
     temperature=0.0,
     max_retries=3,
     model_kwargs={"response_format": {"type": "json_object"}},
@@ -55,20 +55,20 @@ ROUTER_LLM = _router_primary.with_fallbacks([_router_fallback])
 
 # Contextualizer LLM: Follow-up query de-referencing & normalization
 _ctx_primary = ChatGroq(
-    model="qwen/qwen3.6-27b",
-    temperature=0.2,
+    model="openai/gpt-oss-20b",
+    temperature=0.0,
     max_retries=3,
 )
 _ctx_fallback = ChatGroq(
-    model="openai/gpt-oss-20b",
-    temperature=0.2,
+    model="openai/gpt-oss-120b",
+    temperature=0.0,
     max_retries=3,
 )
 CONTEXTUALIZE_LLM = _ctx_primary.with_fallbacks([_ctx_fallback])
 
 # Grader LLM: Context sufficiency evaluation & dynamic k selection
 _grader_primary = ChatGroq(
-    model="qwen/qwen3.6-27b",
+    model="openai/gpt-oss-120b",
     temperature=0.0,
     max_retries=3,
     model_kwargs={"response_format": {"type": "json_object"}},
@@ -88,7 +88,7 @@ _rewriter_primary = ChatGroq(
     max_retries=3,
 )
 _rewriter_fallback = ChatGroq(
-    model="qwen/qwen3.6-27b",
+    model="openai/gpt-oss-120b",
     temperature=0.2,
     max_retries=3,
 )
@@ -102,7 +102,7 @@ _synth_primary = ChatGroq(
     model_kwargs={"response_format": {"type": "json_object"}},
 )
 _synth_fallback = ChatGroq(
-    model="qwen/qwen3.6-27b",
+    model="openai/gpt-oss-20b",
     temperature=0.2,
     max_retries=3,
     model_kwargs={"response_format": {"type": "json_object"}},
@@ -110,20 +110,47 @@ _synth_fallback = ChatGroq(
 SYNTHESIZER_LLM = _synth_primary.with_fallbacks([_synth_fallback])
 
 
-def _strip_json_fences(text: str) -> str:
-    """Strips markdown code fences (```json ... ```) from model outputs."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-    return text.strip()
+def _strip_think_tags(text: str) -> str:
+    """Strips <think>...</think> reasoning traces emitted by reasoning models."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.DOTALL).strip()
+    if "<think>" in cleaned:
+        match = re.search(r"(?:Output|Rewritten|Result):\s*([\s\S]+)$", cleaned, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        cleaned = re.sub(r"^<think>\s*", "", cleaned).strip()
+    return cleaned
+
+
+def _extract_json(text: str) -> dict:
+    """Extracts and parses JSON from raw LLM output, resilient to thinking tags & fences."""
+    cleaned = _strip_think_tags(text)
+
+    # Extract content within markdown code fences if present
+    if "```" in cleaned:
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.DOTALL)
+        if match:
+            cleaned = match.group(1).strip()
+
+    # Attempt direct JSON deserialization
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+
+    # Fallback: Extract outermost JSON object { ... }
+    match = re.search(r"(\{[\s\S]*\})", cleaned)
+    if match:
+        return json.loads(match.group(1))
+
+    raise ValueError(f"No valid JSON found in model output: {text[:120]}...")
 
 
 def contextualize_node(state: AgentState) -> dict:
     """Reformulates follow-up user questions into self-contained standalone queries."""
     history = (state.get("chat_history") or [])[-8:]
-    question = state.get("question", "")
+    question = (state.get("question") or "").strip()
 
     if not history:
         return {"standalone_question": question}
@@ -139,7 +166,8 @@ def contextualize_node(state: AgentState) -> dict:
             SystemMessage(content=CONTEXTUALIZE_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ])
-        rewritten = str(response.content).strip().strip('"\' ')
+        content = response.content if isinstance(response.content, str) else str(response.content)
+        rewritten = _strip_think_tags(content).strip('"\' ')
         return {"standalone_question": rewritten if rewritten else question}
     except Exception:
         logger.warning("Contextualization invocation failed; falling back to raw question.")
@@ -148,7 +176,7 @@ def contextualize_node(state: AgentState) -> dict:
 
 def router_node(state: AgentState) -> dict[str, Any]:
     """Classifies user query into 'internal', 'web', 'chitchat', or 'unrelated' with CoT reasoning."""
-    query_to_route = (
+    query_to_route = _strip_think_tags(
         state.get("standalone_question") or state.get("question") or ""
     ).strip()
 
@@ -178,7 +206,7 @@ def router_node(state: AgentState) -> dict[str, Any]:
             if isinstance(response.content, str)
             else str(response.content)
         )
-        data = json.loads(_strip_json_fences(content))
+        data = _extract_json(content)
         thought = data.get("thought", thought)
         parsed_route = str(data.get("route", "internal")).strip().lower()
         if parsed_route in ["internal", "web", "chitchat", "unrelated"]:
@@ -216,7 +244,7 @@ def retriever_node(state: AgentState) -> dict:
     if current_k is None:
         current_k = 4
 
-    query_to_search = (
+    query_to_search = _strip_think_tags(
         state.get("revised_question")
         or state.get("standalone_question")
         or state.get("question", "")
@@ -256,7 +284,7 @@ def retriever_node(state: AgentState) -> dict:
 
 def grade_context_node(state: AgentState) -> dict:
     """Evaluates context completeness and dynamically recommends retrieval density (k)."""
-    question_used = (
+    question_used = _strip_think_tags(
         state.get("revised_question")
         or state.get("standalone_question")
         or state.get("question", "")
@@ -278,7 +306,7 @@ def grade_context_node(state: AgentState) -> dict:
             if isinstance(response.content, str)
             else str(response.content)
         )
-        data = json.loads(_strip_json_fences(content))
+        data = _extract_json(content)
     except Exception:
         logger.warning("Grader evaluation failed; defaulting to sufficient context.")
         return {"is_sufficient": True, "k": current_k, "grader_thought": ""}
@@ -305,7 +333,7 @@ def grade_context_node(state: AgentState) -> dict:
 def rewrite_query_node(state: AgentState) -> dict:
     """Reformulates the search query incorporating grader feedback and increments retry count."""
     current_retries = state.get("retry_count", 0)
-    question_used = (
+    question_used = _strip_think_tags(
         state.get("revised_question")
         or state.get("standalone_question")
         or state.get("question", "")
@@ -321,7 +349,8 @@ def rewrite_query_node(state: AgentState) -> dict:
                 HumanMessage(content=prompt),
             ]
         )
-        revised_query = str(response.content).strip().strip('"\' ') or question_used
+        content = response.content if isinstance(response.content, str) else str(response.content)
+        revised_query = _strip_think_tags(content).strip('"\' ') or question_used
     except Exception:
         logger.warning("Query rewrite failed; retaining previous query string.")
         revised_query = question_used
@@ -334,7 +363,11 @@ def rewrite_query_node(state: AgentState) -> dict:
 
 def web_search_node(state: AgentState) -> dict:
     """Fetches real-time web context using Tavily Search API with retry backoff."""
-    query_to_search = state.get("standalone_question") or state.get("question", "")
+    query_to_search = _strip_think_tags(
+        state.get("revised_question")
+        or state.get("standalone_question")
+        or state.get("question", "")
+    )
     try:
         context, sources = search_web(query_to_search)
     except Exception:
@@ -346,7 +379,9 @@ def web_search_node(state: AgentState) -> dict:
 
 def synthesizer_node(state: AgentState) -> dict:
     """Synthesizes the final grounded answer strictly from the retrieved context."""
-    question_used = state.get("standalone_question") or state.get("question", "")
+    question_used = _strip_think_tags(
+        state.get("standalone_question") or state.get("question", "")
+    )
     context = state.get("context") or "No context available."
     user_prompt = f"Context:\n{context}\n\nQuestion:\n{question_used}"
 
@@ -360,7 +395,7 @@ def synthesizer_node(state: AgentState) -> dict:
             if isinstance(response.content, str)
             else str(response.content)
         )
-        data = json.loads(_strip_json_fences(content))
+        data = _extract_json(content)
 
         answer = str(data.get("answer", "")).strip()
         if not answer:
@@ -376,4 +411,5 @@ def synthesizer_node(state: AgentState) -> dict:
         return {
             "answer": "Sorry, I ran into an issue generating a response. Could you try rephrasing your question?",
             "sources": [],
-        }
+        }
+
