@@ -472,7 +472,12 @@ def web_search_node(state: AgentState) -> dict:
         logger.warning("Web search execution failed for query: %r", query_to_search)
         context = "The web search failed and returned no results."
         sources = []
-    return {"context": context, "sources": sources}
+    return {
+        "context": context,
+        "sources": sources,
+        "route": "web",
+        "is_sufficient": True,
+    }
 
 
 def synthesizer_node(state: AgentState) -> dict:
