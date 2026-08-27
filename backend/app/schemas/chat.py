@@ -12,16 +12,27 @@ from pydantic import BaseModel, ConfigDict, Field
 class MessageBase(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias="metadata_json",
+        serialization_alias="metadata",
+    )
 
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, description="Message text content")
 
 
-class MessageResponse(MessageBase):
+class MessageResponse(BaseModel):
     id: uuid.UUID
     conversation_id: uuid.UUID
+    role: Literal["user", "assistant", "system"]
+    content: str
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias="metadata_json",
+        serialization_alias="metadata",
+    )
     created_at: datetime
 
     model_config = ConfigDict(

@@ -6,15 +6,24 @@ Run directly via:
     python app.py
 """
 
+import sys
 import uvicorn
+
+# Configure UTF-8 encoding for Windows terminals
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     print("\n" + "=" * 60)
-    print(" ☁️  Kara — Dual-Source Agentic RAG Assistant API")
+    print(" [Kara] Dual-Source Agentic RAG Assistant API")
     print("=" * 60)
-    print(" 🚀 Server running at: http://127.0.0.1:8000")
-    print(" 📖 Interactive Docs: http://127.0.0.1:8000/api/v1/docs")
-    print(" 🔍 ReDoc:            http://127.0.0.1:8000/api/v1/redoc")
+    print(" * Server running at: http://127.0.0.1:8000")
+    print(" * Interactive Docs: http://127.0.0.1:8000/api/v1/docs")
+    print(" * ReDoc:            http://127.0.0.1:8000/api/v1/redoc")
     print("=" * 60 + "\n")
 
     uvicorn.run(
