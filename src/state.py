@@ -43,4 +43,13 @@ class AgentState(TypedDict):
     """Dynamic chunk retrieval density chosen by the grader model (4 to 10)."""
 
     answer: Optional[str]
-    """Final synthesized response text presented to the user."""
+    """Final synthesized response text presented to the user."""
+
+    total_tokens: Optional[int]
+    """Cumulative token count consumed across all LLM node invocations in the turn."""
+
+    prompt_tokens: Optional[int]
+    """Cumulative input/prompt token count."""
+
+    completion_tokens: Optional[int]
+    """Cumulative output/completion token count."""

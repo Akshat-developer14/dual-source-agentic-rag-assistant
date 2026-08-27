@@ -2,7 +2,7 @@
 
 Each node represents an execution step within the LangGraph StateGraph,
 encapsulating LLM invocations, vectorstore retrievals, context grading,
-query reformulation, external web search, and grounded synthesis.
+query reformulation, external web search, token tracking, and grounded synthesis.
 """
 
 import hashlib
@@ -110,6 +110,18 @@ _synth_fallback = ChatGroq(
 SYNTHESIZER_LLM = _synth_primary.with_fallbacks([_synth_fallback])
 
 
+def _extract_tokens(response: Any) -> tuple[int, int, int]:
+    """Extracts (prompt_tokens, completion_tokens, total_tokens) from an LLM response."""
+    usage = getattr(response, "usage_metadata", None) or {}
+    if not usage:
+        resp_meta = getattr(response, "response_metadata", {}) or {}
+        usage = resp_meta.get("token_usage") or {}
+    p = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
+    c = usage.get("output_tokens") or usage.get("completion_tokens") or 0
+    t = usage.get("total_tokens") or (p + c)
+    return p, c, t
+
+
 def _strip_think_tags(text: str) -> str:
     """Strips <think>...</think> reasoning traces emitted by reasoning models."""
     if not text:
@@ -152,8 +164,17 @@ def contextualize_node(state: AgentState) -> dict:
     history = (state.get("chat_history") or [])[-8:]
     question = (state.get("question") or "").strip()
 
+    p_acc = state.get("prompt_tokens") or 0
+    c_acc = state.get("completion_tokens") or 0
+    t_acc = state.get("total_tokens") or 0
+
     if not history:
-        return {"standalone_question": question}
+        return {
+            "standalone_question": question,
+            "prompt_tokens": p_acc,
+            "completion_tokens": c_acc,
+            "total_tokens": t_acc,
+        }
 
     history_text = ""
     for msg in history:
@@ -166,12 +187,23 @@ def contextualize_node(state: AgentState) -> dict:
             SystemMessage(content=CONTEXTUALIZE_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ])
+        p, c, t = _extract_tokens(response)
         content = response.content if isinstance(response.content, str) else str(response.content)
         rewritten = _strip_think_tags(content).strip('"\' ')
-        return {"standalone_question": rewritten if rewritten else question}
+        return {
+            "standalone_question": rewritten if rewritten else question,
+            "prompt_tokens": p_acc + p,
+            "completion_tokens": c_acc + c,
+            "total_tokens": t_acc + t,
+        }
     except Exception:
         logger.warning("Contextualization invocation failed; falling back to raw question.")
-        return {"standalone_question": question}
+        return {
+            "standalone_question": question,
+            "prompt_tokens": p_acc,
+            "completion_tokens": c_acc,
+            "total_tokens": t_acc,
+        }
 
 
 def router_node(state: AgentState) -> dict[str, Any]:
@@ -179,6 +211,10 @@ def router_node(state: AgentState) -> dict[str, Any]:
     query_to_route = _strip_think_tags(
         state.get("standalone_question") or state.get("question") or ""
     ).strip()
+
+    p_acc = state.get("prompt_tokens") or 0
+    c_acc = state.get("completion_tokens") or 0
+    t_acc = state.get("total_tokens") or 0
 
     if not query_to_route:
         return {
@@ -188,6 +224,9 @@ def router_node(state: AgentState) -> dict[str, Any]:
             "answer": "Hi! What AWS or cloud question can I help you with?",
             "retry_count": 0,
             "k": 4,
+            "prompt_tokens": p_acc,
+            "completion_tokens": c_acc,
+            "total_tokens": t_acc,
         }
 
     messages = [
@@ -201,6 +240,11 @@ def router_node(state: AgentState) -> dict[str, Any]:
 
     try:
         response = ROUTER_LLM.invoke(messages)
+        p, c, t = _extract_tokens(response)
+        p_acc += p
+        c_acc += c
+        t_acc += t
+
         content = (
             response.content
             if isinstance(response.content, str)
@@ -235,6 +279,9 @@ def router_node(state: AgentState) -> dict[str, Any]:
         "answer": direct_response,
         "retry_count": 0,
         "k": 4,
+        "prompt_tokens": p_acc,
+        "completion_tokens": c_acc,
+        "total_tokens": t_acc,
     }
 
 
@@ -248,59 +295,88 @@ def retriever_node(state: AgentState) -> dict:
         state.get("revised_question")
         or state.get("standalone_question")
         or state.get("question", "")
-    )
+    ).strip()
+
+    logger.info("Executing retrieval for query: %r with density k=%d", query_to_search, current_k)
 
     retriever = get_internal_retriever(k=current_k)
     docs = retriever.invoke(query_to_search)
 
-    context_parts = []
-    sources = list(state.get("sources") or [])
-    seen_chunks = set(state.get("seen_chunk_ids") or [])
+    if not docs:
+        logger.warning("No document chunks returned for query: %r", query_to_search)
+        return {"context": "", "sources": []}
+
+    seen_hashes = set()
+    context_chunks = []
+    sources = []
 
     for doc in docs:
-        chunk_id = hashlib.md5(doc.page_content.encode("utf-8")).hexdigest()
-        if chunk_id in seen_chunks:
+        page_content = doc.page_content.strip()
+        chunk_hash = hashlib.md5(page_content.encode("utf-8")).hexdigest()
+        if chunk_hash in seen_hashes:
             continue
-        seen_chunks.add(chunk_id)
+        seen_hashes.add(chunk_hash)
 
-        page = doc.metadata.get("page", "Unknown")
-        sources.append(f"AWS Well-Architected Framework (Page {page})")
-        context_parts.append(f"[Source: Page {page}]\n{doc.page_content}")
+        page_num = doc.metadata.get("page", doc.metadata.get("page_number", "N/A"))
+        source_name = doc.metadata.get("source", "AWS Documentation")
 
-    new_context = "\n\n".join(context_parts)
-    existing_context = state.get("context", "")
+        clean_source_name = (
+            source_name.replace("data/", "")
+            .replace(".pdf", "")
+            .replace("_", " ")
+            .title()
+        )
+        source_label = f"{clean_source_name} (Page {page_num})"
 
-    if existing_context and new_context:
-        combined_context = f"{existing_context}\n\n{new_context}".strip()
-    else:
-        combined_context = existing_context or new_context
+        context_chunks.append(f"[Source: {source_label}]\n{page_content}")
+        if source_label not in sources:
+            sources.append(source_label)
 
-    return {
-        "context": combined_context,
-        "sources": sources,
-        "seen_chunk_ids": list(seen_chunks),
-    }
+    aggregated_context = "\n\n---\n\n".join(context_chunks)
+    logger.info("Retrieved %d distinct chunks across %d unique sources.", len(context_chunks), len(sources))
+
+    return {"context": aggregated_context, "sources": sources}
 
 
 def grade_context_node(state: AgentState) -> dict:
-    """Evaluates context completeness and dynamically recommends retrieval density (k)."""
+    """Evaluates context completeness and dynamically adjusts retrieval density k."""
+    current_k = state.get("k", 4)
+    if current_k is None:
+        current_k = 4
+
+    p_acc = state.get("prompt_tokens") or 0
+    c_acc = state.get("completion_tokens") or 0
+    t_acc = state.get("total_tokens") or 0
+
     question_used = _strip_think_tags(
         state.get("revised_question")
         or state.get("standalone_question")
         or state.get("question", "")
     )
-    current_k = state.get("k") or 4
+    context = state.get("context") or ""
 
-    prompt = (
-        f"Question: {question_used}\n"
-        f"Current k: {current_k}\n"
-        f"Retrieved Context:\n{state.get('context', '')}"
-    )
+    if not context.strip():
+        logger.info("Context is empty; marking insufficient to trigger reformulation/fallback.")
+        return {
+            "is_sufficient": False,
+            "k": min(10, current_k + 2),
+            "grader_thought": "No context chunks were retrieved.",
+            "prompt_tokens": p_acc,
+            "completion_tokens": c_acc,
+            "total_tokens": t_acc,
+        }
+
+    prompt = f"Retrieved Context:\n{context}\n\nUser Question: {question_used}"
 
     try:
         response = GRADER_LLM.invoke(
             [SystemMessage(content=GRADER_SYSTEM_PROMPT), HumanMessage(content=prompt)]
         )
+        p, c, t = _extract_tokens(response)
+        p_acc += p
+        c_acc += c
+        t_acc += t
+
         content = (
             response.content
             if isinstance(response.content, str)
@@ -309,7 +385,14 @@ def grade_context_node(state: AgentState) -> dict:
         data = _extract_json(content)
     except Exception:
         logger.warning("Grader evaluation failed; defaulting to sufficient context.")
-        return {"is_sufficient": True, "k": current_k, "grader_thought": ""}
+        return {
+            "is_sufficient": True,
+            "k": current_k,
+            "grader_thought": "",
+            "prompt_tokens": p_acc,
+            "completion_tokens": c_acc,
+            "total_tokens": t_acc,
+        }
 
     is_sufficient = bool(data.get("is_sufficient", True))
 
@@ -327,12 +410,19 @@ def grade_context_node(state: AgentState) -> dict:
         "is_sufficient": is_sufficient,
         "k": recommended_k,
         "grader_thought": grader_thought,
+        "prompt_tokens": p_acc,
+        "completion_tokens": c_acc,
+        "total_tokens": t_acc,
     }
 
 
 def rewrite_query_node(state: AgentState) -> dict:
     """Reformulates the search query incorporating grader feedback and increments retry count."""
     current_retries = state.get("retry_count", 0)
+    p_acc = state.get("prompt_tokens") or 0
+    c_acc = state.get("completion_tokens") or 0
+    t_acc = state.get("total_tokens") or 0
+
     question_used = _strip_think_tags(
         state.get("revised_question")
         or state.get("standalone_question")
@@ -349,6 +439,11 @@ def rewrite_query_node(state: AgentState) -> dict:
                 HumanMessage(content=prompt),
             ]
         )
+        p, c, t = _extract_tokens(response)
+        p_acc += p
+        c_acc += c
+        t_acc += t
+
         content = response.content if isinstance(response.content, str) else str(response.content)
         revised_query = _strip_think_tags(content).strip('"\' ') or question_used
     except Exception:
@@ -358,6 +453,9 @@ def rewrite_query_node(state: AgentState) -> dict:
     return {
         "revised_question": revised_query,
         "retry_count": current_retries + 1,
+        "prompt_tokens": p_acc,
+        "completion_tokens": c_acc,
+        "total_tokens": t_acc,
     }
 
 
@@ -379,6 +477,10 @@ def web_search_node(state: AgentState) -> dict:
 
 def synthesizer_node(state: AgentState) -> dict:
     """Synthesizes the final grounded answer strictly from the retrieved context."""
+    p_acc = state.get("prompt_tokens") or 0
+    c_acc = state.get("completion_tokens") or 0
+    t_acc = state.get("total_tokens") or 0
+
     question_used = _strip_think_tags(
         state.get("standalone_question") or state.get("question", "")
     )
@@ -390,6 +492,11 @@ def synthesizer_node(state: AgentState) -> dict:
             SystemMessage(content=SYNTHESIZER_SYSTEM_PROMPT),
             HumanMessage(content=user_prompt),
         ])
+        p, c, t = _extract_tokens(response)
+        p_acc += p
+        c_acc += c
+        t_acc += t
+
         content = (
             response.content
             if isinstance(response.content, str)
@@ -405,11 +512,19 @@ def synthesizer_node(state: AgentState) -> dict:
         if not isinstance(sources, list):
             sources = state.get("sources") or []
 
-        return {"answer": answer, "sources": sources}
+        return {
+            "answer": answer,
+            "sources": sources,
+            "prompt_tokens": p_acc,
+            "completion_tokens": c_acc,
+            "total_tokens": t_acc,
+        }
     except Exception:
         logger.warning("Synthesizer response generation failed.")
         return {
             "answer": "Sorry, I ran into an issue generating a response. Could you try rephrasing your question?",
             "sources": [],
+            "prompt_tokens": p_acc,
+            "completion_tokens": c_acc,
+            "total_tokens": t_acc,
         }
-

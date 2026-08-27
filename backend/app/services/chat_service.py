@@ -181,6 +181,9 @@ async def stream_agent_chat(
     state_input: dict = {
         "question": request.message,
         "chat_history": clean_history,
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
     }
     full_state: dict = dict(state_input)
 
@@ -204,17 +207,27 @@ async def stream_agent_chat(
                     "is_sufficient": full_state.get("is_sufficient"),
                     "retry_count": full_state.get("retry_count", 0),
                     "sources_count": len(full_state.get("sources", []) or []),
+                    "total_tokens": full_state.get("total_tokens", 0),
+                    "prompt_tokens": full_state.get("prompt_tokens", 0),
+                    "completion_tokens": full_state.get("completion_tokens", 0),
                 },
             }
             yield f"data: {json.dumps(node_event)}\n\n"
 
-        # 7. Extract final synthesized answer and metadata
-        final_answer = full_state.get("answer") or full_state.get("direct_response") or "I was unable to synthesize an answer."
+        # 7. Extract final synthesized answer, metadata, and token usage
+        final_answer = (
+            full_state.get("answer")
+            or full_state.get("direct_response")
+            or "I was unable to synthesize an answer."
+        )
         route = full_state.get("route") or "unknown"
         sources = full_state.get("sources") or []
         thought = full_state.get("thought") or ""
         is_sufficient = full_state.get("is_sufficient")
         retry_count = full_state.get("retry_count", 0)
+        total_tokens = full_state.get("total_tokens", 0)
+        prompt_tokens = full_state.get("prompt_tokens", 0)
+        completion_tokens = full_state.get("completion_tokens", 0)
 
         metadata = {
             "route": route,
@@ -222,6 +235,9 @@ async def stream_agent_chat(
             "thought": thought,
             "is_sufficient": is_sufficient,
             "retry_count": retry_count,
+            "total_tokens": total_tokens,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
         }
 
         # 8. Persist assistant message to Supabase
@@ -233,7 +249,7 @@ async def stream_agent_chat(
             metadata_dict=metadata,
         )
 
-        # 9. Yield final answer event
+        # 9. Yield final answer event with token metrics
         final_event = json.dumps(
             {
                 "type": "final_answer",
