@@ -1,4 +1,4 @@
-"""User management and authentication business logic."""
+"""User management and authentication CRUD operations."""
 
 import uuid
 from typing import Optional
@@ -10,20 +10,26 @@ from backend.app.models.user import User
 from backend.app.schemas.user import UserCreate, UserUpdate
 
 
+# ---------------------------------------------------------------------------
+# User Query Functions
+# ---------------------------------------------------------------------------
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
-    """Fetches a single user record by their email address."""
+    """Retrieves a single user record matching the normalized email address."""
     stmt = select(User).where(User.email == email.strip().lower())
     return db.scalars(stmt).first()
 
 
 def get_user_by_id(db: Session, user_id: uuid.UUID) -> Optional[User]:
-    """Fetches a single user record by their primary UUID."""
+    """Retrieves a single user record by its primary UUID."""
     stmt = select(User).where(User.id == user_id)
     return db.scalars(stmt).first()
 
 
+# ---------------------------------------------------------------------------
+# User Lifecycle & Authentication Functions
+# ---------------------------------------------------------------------------
 def create_user(db: Session, user_in: UserCreate) -> User:
-    """Creates and persists a new user with a hashed password."""
+    """Persists a new user record with a securely hashed bcrypt password."""
     db_user = User(
         email=user_in.email.strip().lower(),
         hashed_password=get_password_hash(user_in.password),
@@ -41,7 +47,11 @@ def authenticate_user(
     email: str,
     password: str,
 ) -> Optional[User]:
-    """Authenticates a user against their stored password hash."""
+    """Authenticates credentials against stored password hashes.
+    
+    Returns:
+        User model instance if authentication succeeds, else None.
+    """
     user = get_user_by_email(db, email=email)
     if not user:
         return None
@@ -55,7 +65,7 @@ def update_user(
     db_user: User,
     user_update: UserUpdate,
 ) -> User:
-    """Updates user profile information or password."""
+    """Updates user profile information or replaces password hash."""
     if user_update.full_name is not None:
         db_user.full_name = user_update.full_name
     if user_update.password is not None:

@@ -1,4 +1,4 @@
-"""FastAPI dependency injection utilities."""
+"""FastAPI dependency injection utilities for authentication and database sessions."""
 
 import uuid
 from typing import Generator
@@ -12,20 +12,30 @@ from backend.app.db.session import get_db
 from backend.app.models.user import User
 from backend.app.services.user_service import get_user_by_id
 
-# OAuth2 scheme: Points to the login URL endpoint for automatic Swagger UI token authorization
+# ---------------------------------------------------------------------------
+# OAuth2 Security Scheme
+# ---------------------------------------------------------------------------
+# Points to login endpoint for Swagger UI Authorization and Bearer header parsing
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login"
 )
 
 
+# ---------------------------------------------------------------------------
+# Current User Dependencies
+# ---------------------------------------------------------------------------
 def get_current_user(
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme),
 ) -> User:
-    """Decodes the JWT token from the Authorization header and resolves the current User."""
+    """Resolves and validates the authenticated User entity from the incoming Bearer token.
+    
+    Raises:
+        HTTPException(401): If token is invalid, expired, or user cannot be found.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials or token expired",
+        detail="Could not validate credentials or token has expired",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -48,7 +58,7 @@ def get_current_user(
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Verifies that the current authenticated user account is active."""
+    """Ensures the authenticated user account is in an active state."""
     if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

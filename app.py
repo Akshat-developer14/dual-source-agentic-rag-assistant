@@ -1,35 +1,30 @@
-"""FastAPI Application Server Entrypoint for Kara Agentic RAG Assistant.
+"""Entrypoint launcher for the Kara Agentic RAG FastAPI Backend."""
 
-Run directly via:
-    uv run app.py
-    # or
-    python app.py
-"""
-
+import os
 import sys
 import uvicorn
 
-# Configure UTF-8 encoding for Windows terminals
+# Ensure UTF-8 console output for cross-platform and Windows terminal compatibility
 if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 if __name__ == "__main__":
-    print("\n" + "=" * 60)
-    print(" [Kara] Dual-Source Agentic RAG Assistant API")
-    print("=" * 60)
-    print(" * Server running at: http://127.0.0.1:8000")
-    print(" * Interactive Docs: http://127.0.0.1:8000/api/v1/docs")
-    print(" * ReDoc:            http://127.0.0.1:8000/api/v1/redoc")
-    print("=" * 60 + "\n")
+    port = int(os.environ.get("PORT", 8000))
+    host = os.environ.get("HOST", "0.0.0.0")
+
+    print("\n" + "=" * 65)
+    print("  KARA AGENTIC RAG ASSISTANT — FASTAPI BACKEND SERVICE")
+    print("=" * 65)
+    print(f"  Server URL      : http://localhost:{port}")
+    print(f"  API Docs (OpenAPI): http://localhost:{port}/api/v1/docs")
+    print(f"  Health Endpoint : http://localhost:{port}/health")
+    print("=" * 65 + "\n")
 
     uvicorn.run(
         "backend.app.main:app",
-        host="0.0.0.0",
-        port=8000,
+        host=host,
+        port=port,
         reload=True,
         log_level="info",
     )

@@ -1,4 +1,8 @@
-"""FastAPI Application Main Entrypoint."""
+"""FastAPI Application Main Entrypoint.
+
+Initializes the core FastAPI application with lifecycle management,
+dynamic CORS origin matching, route registration, and health probes.
+"""
 
 import logging
 from contextlib import asynccontextmanager
@@ -8,6 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.api.v1.api import api_router
 from backend.app.core.config import settings
 
+# ---------------------------------------------------------------------------
+# Logging Configuration
+# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -15,14 +22,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Application Lifespan Events
+# ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle events (startup & shutdown)."""
+    """Manages application startup and graceful shutdown sequences."""
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}...")
     yield
     logger.info(f"Shutting down {settings.PROJECT_NAME}...")
 
 
+# ---------------------------------------------------------------------------
+# FastAPI Instance Initialization
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -32,7 +45,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Robust CORS configuration supporting localhost and 127.0.0.1 across any port
+# ---------------------------------------------------------------------------
+# CORS Middleware Configuration
+# Enables credentialed cross-origin requests for local development (Next.js)
+# and deployed production environments.
+# ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -47,13 +64,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount API v1 router
+# ---------------------------------------------------------------------------
+# Route Mounting
+# ---------------------------------------------------------------------------
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
+# ---------------------------------------------------------------------------
+# Health Check Endpoints
+# ---------------------------------------------------------------------------
 @app.get("/", tags=["health"])
 def root():
-    """Root health check endpoint."""
+    """Root metadata and API service health status."""
     return {
         "status": "healthy",
         "service": settings.PROJECT_NAME,
@@ -64,5 +86,5 @@ def root():
 
 @app.get("/health", tags=["health"])
 def health_check():
-    """Dedicated health check probe."""
+    """Dedicated liveness probe endpoint."""
     return {"status": "ok"}

@@ -1,4 +1,4 @@
-"""Chat and Conversation management endpoints."""
+"""Chat, conversation management, and real-time streaming endpoints."""
 
 import uuid
 from typing import Any, List
@@ -27,16 +27,19 @@ from backend.app.services.chat_service import (
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# Conversation Management Endpoints
+# ---------------------------------------------------------------------------
 @router.get(
     "/conversations",
     response_model=List[ConversationListItem],
-    summary="List all conversations for the current user",
+    summary="List all conversation threads for the current user",
 )
 def list_conversations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
-    """Returns conversation history threads for the authenticated user."""
+    """Returns chronologically ordered conversation threads for the authenticated user."""
     conversations = get_user_conversations(db, user_id=current_user.id)
     items = []
     for conv in conversations:
@@ -64,7 +67,7 @@ def create_new_conversation(
     current_user: User = Depends(get_current_active_user),
     conv_in: ConversationCreate,
 ) -> Any:
-    """Creates a new empty conversation thread."""
+    """Initializes a new empty conversation thread associated with the user."""
     conv = create_conversation(
         db,
         user_id=current_user.id,
@@ -76,14 +79,14 @@ def create_new_conversation(
 @router.get(
     "/conversations/{conversation_id}",
     response_model=ConversationResponse,
-    summary="Get conversation details and full message history",
+    summary="Get conversation details and full message turn history",
 )
 def get_conversation_details(
     conversation_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
-    """Fetches a specific conversation with all historical message turns."""
+    """Fetches a specific conversation along with all historical messages and metadata."""
     conv = get_conversation(db, conversation_id=conversation_id, user_id=current_user.id)
     if not conv:
         raise HTTPException(
@@ -96,14 +99,14 @@ def get_conversation_details(
 @router.delete(
     "/conversations/{conversation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a conversation and all its messages",
+    summary="Delete a conversation and all associated message turns",
 )
 def delete_user_conversation(
     conversation_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Deletes a conversation thread."""
+    """Deletes a conversation thread and cascades deletion to associated messages."""
     success = delete_conversation(db, conversation_id=conversation_id, user_id=current_user.id)
     if not success:
         raise HTTPException(
@@ -113,16 +116,19 @@ def delete_user_conversation(
     return None
 
 
+# ---------------------------------------------------------------------------
+# Real-Time SSE Agent Streaming Endpoint
+# ---------------------------------------------------------------------------
 @router.post(
     "/stream",
-    summary="Stream agent response via Server-Sent Events (SSE)",
+    summary="Stream agent execution events and response via Server-Sent Events (SSE)",
 )
 def chat_stream(
     request: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Executes the LangGraph agent and streams node events and final answer in real time."""
+    """Executes the LangGraph agent pipeline and streams real-time node updates and final synthesis."""
     return StreamingResponse(
         stream_agent_chat(db=db, user_id=current_user.id, request=request),
         media_type="text/event-stream",

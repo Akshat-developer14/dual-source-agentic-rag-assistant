@@ -1,4 +1,4 @@
-"""Database session and engine management."""
+"""Database session and connection engine management."""
 
 import logging
 from typing import Generator
@@ -10,7 +10,11 @@ from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# NullPool is recommended when connecting through Supabase/Neon connection poolers
+# ---------------------------------------------------------------------------
+# SQLAlchemy Engine Initialization
+# Configured with NullPool to allow Supabase/Neon connection poolers to manage pooling
+# without client-side socket collisions, and pool_pre_ping for liveness checks.
+# ---------------------------------------------------------------------------
 engine = create_engine(
     settings.DATABASE_URL,
     poolclass=NullPool,
@@ -26,13 +30,16 @@ SessionLocal = sessionmaker(
 )
 
 
+# ---------------------------------------------------------------------------
+# Session Dependency Provider
+# ---------------------------------------------------------------------------
 def get_db() -> Generator[Session, None, None]:
-    """FastAPI dependency that yields a SQLAlchemy database session per request."""
+    """FastAPI request-scoped dependency yielding a database session with auto-rollback on error."""
     db = SessionLocal()
     try:
         yield db
     except Exception as exc:
-        logger.error(f"Database session rollback due to error: {exc}")
+        logger.error("Database session encountered an error; executing rollback: %s", exc)
         db.rollback()
         raise
     finally:

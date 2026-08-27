@@ -1,4 +1,4 @@
-"""Authentication and user session endpoints."""
+"""User authentication and profile API endpoints."""
 
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,23 +9,30 @@ from backend.app.core.deps import get_current_active_user, get_db
 from backend.app.core.security import create_access_token
 from backend.app.models.user import User
 from backend.app.schemas.user import Token, UserCreate, UserResponse
-from backend.app.services.user_service import authenticate_user, create_user, get_user_by_email
+from backend.app.services.user_service import (
+    authenticate_user,
+    create_user,
+    get_user_by_email,
+)
 
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# Registration & Authentication
+# ---------------------------------------------------------------------------
 @router.post(
     "/register",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user account",
 )
-def register(
+def register_user(
     *,
     db: Session = Depends(get_db),
     user_in: UserCreate,
 ) -> Any:
-    """Creates a new user with email and password."""
+    """Registers a new user account with unique email validation."""
     existing_user = get_user_by_email(db, email=user_in.email)
     if existing_user:
         raise HTTPException(
@@ -39,13 +46,13 @@ def register(
 @router.post(
     "/login",
     response_model=Token,
-    summary="Authenticate and obtain JWT access token (OAuth2 Form)",
+    summary="Authenticate user and issue JWT access token",
 )
-def login_access_token(
+def login_for_access_token(
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> Any:
-    """OAuth2 compatible token login, getting an access token for future requests."""
+    """Authenticates user credentials using OAuth2 password grant and returns a Bearer JWT."""
     user = authenticate_user(
         db,
         email=form_data.username,
@@ -54,29 +61,32 @@ def login_access_token(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password.",
+            detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user account.",
+            detail="Inactive user account",
         )
 
-    access_token = create_access_token(subject=str(user.id))
+    access_token = create_access_token(subject=user.id)
     return {
         "access_token": access_token,
         "token_type": "bearer",
     }
 
 
+# ---------------------------------------------------------------------------
+# User Profile
+# ---------------------------------------------------------------------------
 @router.get(
     "/me",
     response_model=UserResponse,
-    summary="Get current logged-in user profile",
+    summary="Get current authenticated user profile",
 )
-def read_user_me(
+def read_current_user(
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
-    """Fetches profile details of the authenticated user."""
+    """Returns profile metadata for the authenticated user session."""
     return current_user
