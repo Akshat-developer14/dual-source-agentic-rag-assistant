@@ -1,0 +1,58 @@
+[
+  {
+    "id": "tc-001",
+    "category": "internal_architecture",
+    "question": "What are the 7 design principles of the Security Pillar in the AWS Well-Architected Framework?",
+    "expected_route": "internal",
+    "ground_truth": "The 7 design principles of the Security Pillar are: 1. Implement a strong identity foundation, 2. Enable traceability, 3. Apply security at all layers, 4. Automate security best practices, 5. Protect data in transit and at rest, 6. Keep people away from data, 7. Prepare for security events.",
+    "must_cite": true
+  },
+  {
+    "id": "tc-002",
+    "category": "internal_architecture",
+    "question": "How does the Reliability Pillar recommend handling failure recovery?",
+    "expected_route": "internal",
+    "ground_truth": "The Reliability Pillar emphasizes automating recovery from failure, testing recovery procedures, scaling horizontally to increase workload availability, and stopping guessing capacity.",
+    "must_cite": true
+  },
+  {
+    "id": "tc-003",
+    "category": "internal_architecture",
+    "question": "What are the core design principles of the Cost Optimization Pillar?",
+    "expected_route": "internal",
+    "ground_truth": "Core principles include implementing cloud financial management, adopting a consumption model, measuring overall efficiency, stopping spending money on undifferentiated heavy lifting, and analyzing and attributing expenditure.",
+    "must_cite": true
+  },
+  {
+    "id": "tc-004",
+    "category": "web_comparison",
+    "question": "Compare AWS Trainium and Google TPU v5e in terms of memory per chip and price performance.",
+    "expected_route": "web",
+    "ground_truth": "AWS Trainium offers 32GB memory per chip with 30-40% better price performance and lower cost-to-train than traditional GPUs, whereas Google TPU v5e provides 16GB memory per chip with a lower cost per chip optimized for efficient training and inference.",
+    "must_cite": true
+  },
+  {
+    "id": "tc-005",
+    "category": "web_live",
+    "question": "Is AWS us-east-1 currently operating normally or experiencing an active outage?",
+    "expected_route": "web",
+    "ground_truth": "A live status check on AWS Health Dashboard indicating current operational status of us-east-1.",
+    "must_cite": false
+  },
+  {
+    "id": "tc-006",
+    "category": "chitchat",
+    "question": "Good morning! Can you introduce yourself?",
+    "expected_route": "chitchat",
+    "ground_truth": "A friendly introduction identifying as Kara, an AWS Cloud Architecture Assistant.",
+    "must_cite": false
+  },
+  {
+    "id": "tc-007",
+    "category": "unrelated",
+    "question": "Who wrote the play Romeo and Juliet?",
+    "expected_route": "unrelated",
+    "ground_truth": "A polite decline stating focus on AWS and cloud architecture topics.",
+    "must_cite": false
+  }
+]
