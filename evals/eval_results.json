@@ -9,10 +9,10 @@
     "faithfulness": 1.0,
     "answer_relevance": 1.0,
     "citation_valid": true,
-    "total_tokens": 7109,
-    "latency_ms": 41979,
-    "reasoning": "The answer lists all seven principles exactly as described in the retrieved context, fully addressing the user\u2019s request.",
-    "answer_snippet": "The seven design principles of the Security Pillar are:\n1. Implement a strong id..."
+    "total_tokens": 6717,
+    "latency_ms": 23061,
+    "reasoning": "The answer lists all seven design principles exactly as described in the retrieved context, fully addressing the user\u2019s question without adding unsupported information.",
+    "answer_snippet": "The Security Pillar\u2019s seven design principles are:\n1. Implement a strong identit..."
   },
   {
     "id": "tc-002",
@@ -24,10 +24,10 @@
     "faithfulness": 1.0,
     "answer_relevance": 1.0,
     "citation_valid": true,
-    "total_tokens": 8572,
-    "latency_ms": 42601,
-    "reasoning": "The answer\u2019s statements are all directly supported by the retrieved AWS Well\u2011Architected Reliability Pillar content, and it fully addresses the question about recommended failure\u2011recovery practices.",
-    "answer_snippet": "The Reliability Pillar advises a systematic, automated approach to failure recov..."
+    "total_tokens": 8798,
+    "latency_ms": 40154,
+    "reasoning": "All listed recommendations are directly supported by the retrieved AWS Well\u2011Architected context, and the answer fully addresses the question about failure recovery guidance from the Reliability Pillar.",
+    "answer_snippet": "The Reliability Pillar advises a multi\u2011layered approach to failure recovery:\n1. ..."
   },
   {
     "id": "tc-003",
@@ -39,10 +39,10 @@
     "faithfulness": 1.0,
     "answer_relevance": 1.0,
     "citation_valid": true,
-    "total_tokens": 7541,
-    "latency_ms": 47143,
+    "total_tokens": 7283,
+    "latency_ms": 41318,
     "reasoning": "The answer lists exactly the five design principles described in the retrieved context, fully addressing the question without adding unsupported information.",
-    "answer_snippet": "The Cost Optimization pillar is built around five core design principles:\n1. Imp..."
+    "answer_snippet": "The Cost Optimization Pillar is built on five core design principles:\n1. Impleme..."
   },
   {
     "id": "tc-004",
@@ -51,13 +51,13 @@
     "expected_route": "web",
     "actual_route": "web",
     "route_match": true,
-    "faithfulness": 0.5,
+    "faithfulness": 1.0,
     "answer_relevance": 1.0,
     "citation_valid": true,
-    "total_tokens": 5478,
-    "latency_ms": 22326,
-    "reasoning": "The answer correctly reports memory per chip from the context, but adds an unsupported claim about TPU v5e having 2.5\u00d7 better inference price\u2011performance versus Trainium, which is not in the retrieved sources.",
-    "answer_snippet": "**Memory per chip**\n- AWS Trainium: 32\u202fGB HBM2e per chip\n- Google TPU v5e: 16\u202fGB..."
+    "total_tokens": 5192,
+    "latency_ms": 27076,
+    "reasoning": "The answer accurately reflects the retrieved facts: Trainium has 32\u202fGB vs TPU v5e 16\u202fGB per chip, and TPU v5e offers superior price\u2011performance, matching the sources. It directly addresses the asked comparison.",
+    "answer_snippet": "- **Memory per chip**: AWS Trainium provides 32\u202fGB of HBM2e memory per chip, whi..."
   },
   {
     "id": "tc-005",
@@ -66,13 +66,13 @@
     "expected_route": "web",
     "actual_route": "web",
     "route_match": true,
-    "faithfulness": 1.0,
-    "answer_relevance": 0.9,
+    "faithfulness": 0.9,
+    "answer_relevance": 1.0,
     "citation_valid": true,
-    "total_tokens": 4799,
-    "latency_ms": 24052,
-    "reasoning": "The response\u2019s claims are all backed by the provided context and it directly answers the user\u2019s query about the current status of us-east-1, though it notes some uncertainty due to missing timestamps.",
-    "answer_snippet": "Based on the information you provided, there\u2019s no clear indication of a current,..."
+    "total_tokens": 4739,
+    "latency_ms": 24239,
+    "reasoning": "The answer accurately reflects that the retrieved sources show no clear current outage and correctly notes the historical nature of other mentions, staying faithful to the context. It directly addresses the user\u2019s query about the current status, making it fully relevant.",
+    "answer_snippet": "Based on the information you shared, there\u2019s no definitive indication of a live,..."
   },
   {
     "id": "tc-006",
@@ -85,8 +85,8 @@
     "answer_relevance": 1.0,
     "citation_valid": true,
     "total_tokens": 1839,
-    "latency_ms": 883,
-    "reasoning": "With no retrieved context, the answer appropriately introduces Kara as the AWS assistant, matching the expected friendly introduction, thus fully faithful and relevant.",
+    "latency_ms": 767,
+    "reasoning": "The answer appropriately introduces Kara as an AWS assistant, matching the expected friendly introduction, and there is no context to contradict.",
     "answer_snippet": "Good morning! I'm Kara, your AWS Well\u2011Architected Framework assistant. How can I..."
   },
   {
@@ -97,11 +97,11 @@
     "actual_route": "unrelated",
     "route_match": true,
     "faithfulness": 1.0,
-    "answer_relevance": 0.0,
+    "answer_relevance": 1.0,
     "citation_valid": true,
-    "total_tokens": 1756,
-    "latency_ms": 728,
-    "reasoning": "The reply correctly follows the system's scope, so it is faithful to the empty context, but it does not answer the user's question about the play's author, making it irrelevant.",
+    "total_tokens": 1750,
+    "latency_ms": 757,
+    "reasoning": "The answer correctly declines the out\u2011of\u2011scope question about Romeo and Juliet, matching the expected policy response, and there is no context to contradict.",
     "answer_snippet": "That's outside what I can help with \u2014 I'm focused on AWS and cloud architecture ..."
   }
 ]
